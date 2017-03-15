@@ -4,6 +4,9 @@ import glob
 import tarfile
 import shutil
 import h5py
+import dateutil.parser
+import datetime
+import time
 
 #logging
 import logging
@@ -50,8 +53,9 @@ class Fast5DirHandler(object):
         self.files = []
         super(Fast5DirHandler, self).__init__()
 
+        
         if os.path.isdir(self.dir):
-            pattern = self.dir + '/' + '*.fast5'
+            pattern = self.dir + os.path.sep + '*.fast5'
             files = glob.glob(pattern)
             self.files = files
 
@@ -118,8 +122,13 @@ class Fast5FileSet(object):
 			f = self.fileset[0]
 			# is it a directory?
 			if os.path.isdir(f):
-				pattern = f + '/' + '*.fast5'
-				files = glob.glob(pattern)
+				# Update (2/3/17) to account for new sub-directory
+				# output from MinKNOW v1.4 release.
+				files = [os.path.join(dirpath + os.path.sep + fast5file) \
+								for dirpath, dirname, files in os.walk(f) \
+									for fast5file in files]
+				#pattern = f + '/' + '*.fast5'
+				#files = glob.glob(pattern)
 				self.files = iter(files)
 				self.num_files_in_set = len(files)
 				self.set_type = FAST5SET_DIRECTORY
@@ -413,8 +422,15 @@ class Fast5File(object):
 			self.have_metadata = True
 
 		try:
-			return int(self.keyinfo['tracking_id'].attrs['exp_start_time'])
-		except:
+			if self.keyinfo['tracking_id'].attrs['exp_start_time'].endswith('Z'):
+				# MinKNOW >= 1.4 ISO format and UTC time
+				dt = dateutil.parser.parse(self.keyinfo['tracking_id'].attrs['exp_start_time'])
+				timestamp = int(time.mktime(dt.timetuple()))
+			else:
+				# Unix time stamp from MinKNOW < 1.4
+				timestamp = int(self.keyinfo['tracking_id'].attrs['exp_start_time'])
+			return timestamp
+		except KeyError, e:
 			return None
 
 	def get_channel_number(self):
@@ -427,12 +443,12 @@ class Fast5File(object):
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['channel_id'].attrs['channel_number']
+			return int(self.keyinfo['channel_id'].attrs['channel_number'])
 		except:
 			pass
 
 		try:
-			return self.keyinfo['read_id'].attrs['channel_number']
+			return int(self.keyinfo['read_id'].attrs['channel_number'])
 		except:
 			return None
 
@@ -525,7 +541,19 @@ Please report this error (with the offending file) to:
 		node = self.find_read_number_block()
 		if node:
 			try:
-				return node.attrs['read_number']
+				return int(node.attrs['read_number'])
+			except:
+				return None
+		return None
+
+	def get_start_mux(self):
+		"""
+		Return the mux (multiplexer) setting for this read: identify the pore with this and get_channel_number()
+		"""
+		node = self.find_read_number_block()
+		if node:
+			try:
+				return int(node.attrs['start_mux'])
 			except:
 				return None
 		return None
