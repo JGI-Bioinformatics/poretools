@@ -44,8 +44,11 @@ FAST5SET_DIRECTORY = 1
 FAST5SET_SINGLEFILE = 2
 FAST5SET_TARBALL = 3
 FAST5SET_ZIP = 4
-PORETOOLS_TMPDIR = '/dev/shm/.poretools_tmp'
-
+PORETOOLS_TMPDIR = None
+for testdir in ['/dev/shm/', '/tmp/', '.']:
+	if os.path.isdir(testdir):
+		PORETOOLS_TMPDIR = testdir
+		break
 
 class Fast5DirHandler(object):
 
@@ -94,7 +97,11 @@ class Fast5FileSet(object):
 		self.set_type = None
 		self.num_files_in_set = None
 		self.group = group
+		self._tmp = tempfile.mkdtemp(prefix=PORETOOLS_TMPDIR)
 		self._extract_fast5_files()
+
+	def __del__(self):
+		os.rmdir(self._tmp)
 
 	def get_num_files(self):
 		"""
@@ -110,11 +117,10 @@ class Fast5FileSet(object):
 	def next(self):
 		try:
 			nextFile = next(self.files)
-			return Fast5File(nextFile, self.group)
+			autoremove = isinstance(self.files, ZipFileIterator) or isinstance(self.files, TarballFileIterator)
+			nextFast5 = Fast5File(nextFile, self.group, autoremove)
+			return nextFast5
 		except Exception as e:
-			# cleanup our mess
-			if self.set_type == FAST5SET_TARBALL or self.set_type == FAST5SET_ZIP:
-				shutil.rmtree(PORETOOLS_TMPDIR)
 			raise StopIteration
 
 	__next__ = next
@@ -155,18 +161,15 @@ class Fast5FileSet(object):
 
 			# is it a tarball?
 			elif tarfile.is_tarfile(f):
-				self._prep_tmpdir(PORETOOLS_TMPDIR)
-				self.files = TarballFileIterator(f)
+				self.files = TarballFileIterator(f, self._tmp)
 				# set to None to delay initialisation
 				self.num_files_in_set = None
 				self.set_type = FAST5SET_TARBALL
 
 			# is it a zipfile?
 			elif zipfile.is_zipfile(f):
-				print("Found zipfile %s" % (f))
-				self._prep_tmpdir(PORETOOLS_TMPDIR)
 				zip = zipfile.ZipFile(f, 'r', zipfile.ZIP_STORED, True)
-				self.files = ZipFileIterator( zip )
+				self.files = ZipFileIterator( zip, self._tmp )
 				# set to None to delay initialisation
 				self.num_files_in_set = None
 				self.set_type = FAST5SET_ZIP
@@ -184,9 +187,10 @@ class TarballFileIterator:
 	def _fast5_filename_filter(self, filename):
 		return os.path.basename(filename).endswith('.fast5') and not os.path.basename(filename).startswith('.')
 
-	def __init__(self, tarball):
+	def __init__(self, tarball, tempdir):
 		self._tarball = tarball
 		self._tarfile = tarfile.open(tarball)
+		self._tmp = tempdir
 
 	def __del__(self):
 		self._tarfile.close()
@@ -201,8 +205,8 @@ class TarballFileIterator:
 				raise StopIteration
 			elif self._fast5_filename_filter(tarinfo.name):
 				break
-		self._tarfile.extract(tarinfo, path=PORETOOLS_TMPDIR)
-		return os.path.join(PORETOOLS_TMPDIR, tarinfo.name)
+		self._tarfile.extract(tarinfo, path=self._tmp)
+		return os.path.join(self._tmp, tarinfo.name)
 
 	__next__ = next
 
@@ -214,9 +218,10 @@ class ZipFileIterator:
 	def _fast5_filename_filter(self, filename):
 		return os.path.basename(filename).endswith('.fast5') and not os.path.basename(filename).startswith('.')
 
-	def __init__(self, zip):
+	def __init__(self, zip, tempdir):
 		self._zip = zip
-		self._infolist = zip.infolist().reverse()
+		self._infolist = iter(zip.infolist())
+		self._tmp = tempdir
 
 	def __del__(self):
 		self._zip.close()
@@ -227,14 +232,12 @@ class ZipFileIterator:
 	def next(self):
 		zipinfo = None
 		while True:
-			if len(self._infolist) == 0:
-				break
-			zipinfo = self._infolist.pop() # returns last entry, hence the reverse at init
+			zipinfo = next(self._infolist)
 			if zipinfo and self._fast5_filename_filter( zipinfo.filename ):
 				break
 		if zipinfo:
-			self._zip.extract(zipinfo, PORETOOLS_TMPDIR)
-			return os.path.join(PORETOOLS_TMPDIR, zipinfo.filename )
+			self._zip.extract(zipinfo, self._tmp)
+			return os.path.join(self._tmp, zipinfo.filename )
 		else:
 			raise StopIteration
 
@@ -245,7 +248,7 @@ class ZipFileIterator:
 
 class Fast5File(object):
 
-	def __init__(self, filename, group=0):
+	def __init__(self, filename, group=0, autoremove=False):
 		self.filename = filename
 		self.group = group
 		self.is_open = self.open()
@@ -267,6 +270,8 @@ class Fast5File(object):
 		self.have_complements = False
 		self.have_pre_basecalled = False
 		self.have_metadata = False
+		if autoremove:
+			os.unlink(self.filename)
 
 
 	def __del__(self):
@@ -1012,7 +1017,7 @@ class Fast5ZipArchive(object):
 		"""Opens a new or appends an old zip file"""
 		self.filename = args[0]
 		self.zip = zipfile.ZipFile(self.filename, 'a', zipfile.ZIP_DEFLATED, True)
-		self.tmp = tempdir.mkdtemp(prefix=prefix)
+		self.tmp = tempfile.mkdtemp(prefix=prefix)
 
 	def __del__(self):
 		self.zip.close()
