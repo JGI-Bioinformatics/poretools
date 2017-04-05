@@ -98,6 +98,7 @@ class Fast5FileSet(object):
 		self.num_files_in_set = None
 		self.group = group
 		self._tmp = tempfile.mkdtemp(prefix=PORETOOLS_TMPDIR)
+		self.oldfiles = None
 		self._extract_fast5_files()
 
 	def __del__(self):
@@ -116,7 +117,28 @@ class Fast5FileSet(object):
 
 	def next(self):
 		try:
-			nextFile = next(self.files)
+			# allow multiple tarball or zip files to expand
+			try:
+				nextFile = next(self.files)
+			except StopIteration as e:
+				if self.oldfiles:
+					self.files = self.oldfiles;
+					self.oldfiles = None;
+					return self.next()
+				raise e
+				
+			if tarfile.is_tarfile(nextFile):
+				self.set_type = FAST5SET_TARBALL
+				self.oldfiles = self.files
+				self.files = TarballFileIterator(nextFile, self._tmp)
+				return self.next()
+			elif zipfile.is_zipfile(nextFile):
+				self.set_type = FAST5SET_ZIP
+				zip = zipfile.ZipFile(nextFile, 'r', zipfile.ZIP_STORED, True)
+				self.oldfiles = self.files
+				self.files = ZipFileIterator( zip, self._tmp )
+				return self.next()
+
 			autoremove = isinstance(self.files, ZipFileIterator) or isinstance(self.files, TarballFileIterator)
 			nextFast5 = Fast5File(nextFile, self.group, autoremove)
 			return nextFast5
@@ -124,15 +146,6 @@ class Fast5FileSet(object):
 			raise StopIteration
 
 	__next__ = next
-
-	def _prep_tmpdir(self, path):
-		if path is None:
-			path = PORETOOLS_TMPDIR
-		else:
-			PORETOOLS_TMPDIR = path
-		if os.path.isdir(PORETOOLS_TMPDIR):
-			shutil.rmtree(PORETOOLS_TMPDIR)
-		os.mkdir(PORETOOLS_TMPDIR)
 
 	def _extract_fast5_files(self):
 
