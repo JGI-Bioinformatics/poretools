@@ -20,8 +20,8 @@ logger = logging.getLogger('poretools')
 ### and must be converted to seconds by dividing by sample frequency.
 
 # poretools imports
-import poretools.formats
-from poretools.Event import Event
+from . import formats
+from . import Event
 
 fastq_paths = {
   'closed' : {},
@@ -80,6 +80,8 @@ class Fast5DirHandler(object):
         else:
             raise StopIteration()
 
+    __next__ = next
+
 
 class Fast5FileSet(object):
 
@@ -107,12 +109,15 @@ class Fast5FileSet(object):
 
 	def next(self):
 		try:
-			return Fast5File(self.files.next(), self.group)
+			nextFile = next(self.files)
+			return Fast5File(nextFile, self.group)
 		except Exception as e:
 			# cleanup our mess
 			if self.set_type == FAST5SET_TARBALL or self.set_type == FAST5SET_ZIP:
 				shutil.rmtree(PORETOOLS_TMPDIR)
 			raise StopIteration
+
+	__next__ = next
 
 	def _prep_tmpdir(self, path):
 		if path is None:
@@ -191,13 +196,15 @@ class TarballFileIterator:
 
 	def next(self):
 		while True:
-			tarinfo = self._tarfile.next()
+			tarinfo = next(self._tarfile)
 			if tarinfo is None:
 				raise StopIteration
 			elif self._fast5_filename_filter(tarinfo.name):
 				break
 		self._tarfile.extract(tarinfo, path=PORETOOLS_TMPDIR)
 		return os.path.join(PORETOOLS_TMPDIR, tarinfo.name)
+
+	__next__ = next
 
 	def __len__(self):
 		with tarfile.open(self._tarball) as tar:
@@ -230,6 +237,8 @@ class ZipFileIterator:
 			return os.path.join(PORETOOLS_TMPDIR, zipinfo.filename )
 		else:
 			raise StopIteration
+
+	__next__ = next
 
 	def __len__(self):
 		return len(self._infolist)
@@ -321,7 +330,7 @@ class Fast5File(object):
 				for x in self.hdf5file.items():
 					self.hdf5file.copy(x[0], fcopy)
 				fcopy.close()
-			except Exception, e:
+			except Exception as e:
 				logger.warning("Can not open a new file %s for writing!\n" % (newfile))
 				return False
 			return True
@@ -929,7 +938,7 @@ Please report this error (with the offending file) to:
 		"""
 		Return the sequence in the FAST5 file in FASTQ format
 		"""
-		for id, h5path in fastq_paths[self.version].iteritems(): 
+		for (id, h5path) in fastq_paths[self.version].items(): 
 			try:
 				table = self.hdf5file[h5path % self.group]
 				fq = formats.Fastq(table['Fastq'][()])
@@ -942,7 +951,7 @@ Please report this error (with the offending file) to:
 		"""
 		Return the sequence in the FAST5 file in FASTA format
 		"""
-		for id, h5path in fastq_paths[self.version].iteritems(): 
+		for (id, h5path) in fastq_paths[self.version].items(): 
 			try:
 				table = self.hdf5file[h5path % self.group]
 				fa = formats.Fasta(table['Fastq'][()])
