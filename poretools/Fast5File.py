@@ -97,7 +97,8 @@ class Fast5FileSet(object):
 		self.set_type = None
 		self.num_files_in_set = None
 		self.group = group
-		self._tmp = tempfile.mkdtemp(prefix=PORETOOLS_TMPDIR)
+		#self._tmp = tempfile.mkdtemp(prefix=PORETOOLS_TMPDIR)
+		self._tmp = None
 		self.oldfiles = None
 		self._extract_fast5_files()
 
@@ -127,12 +128,23 @@ class Fast5FileSet(object):
 					return self.next()
 				raise e
 				
-			if tarfile.is_tarfile(nextFile):
+			nextFast5 = None
+			(f, ext) = os.path.splitext(nextFile)
+			ext = ext.lower()
+			autoremove = isinstance(self.files, ZipFileIterator) or isinstance(self.files, TarballFileIterator)
+
+			if ext == '.fast5':
+				nextFast5 = Fast5File(nextFile, self.group, autoremove)
+			elif ext == '.tar' and tarfile.is_tarfile(nextFile) and self.oldfiles is None:
+				if not self._tmp:
+					self._tmp = tempfile.mkdtemp(prefix=PORETOOLS_TMPDIR)
 				self.set_type = FAST5SET_TARBALL
 				self.oldfiles = self.files
 				self.files = TarballFileIterator(nextFile, self._tmp)
-				return self.next()
-			elif zipfile.is_zipfile(nextFile):
+				nextFast5 = self.next()
+			elif ext == '.zip' and zipfile.is_zipfile(nextFile) and self.oldfiles is None:
+				if not self._tmp:
+					self._tmp = tempfile.mkdtemp(prefix=PORETOOLS_TMPDIR)
 				self.set_type = FAST5SET_ZIP
 				zip = zipfile.ZipFile(nextFile, 'r', zipfile.ZIP_STORED, True)
 				self.oldfiles = self.files
