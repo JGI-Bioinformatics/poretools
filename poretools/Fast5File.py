@@ -21,7 +21,7 @@ logger = logging.getLogger('poretools')
 
 # poretools imports
 from . import formats
-from . import Event
+from .Event import Event
 
 fastq_paths = {
   'closed' : {},
@@ -103,7 +103,8 @@ class Fast5FileSet(object):
 		self._extract_fast5_files()
 
 	def __del__(self):
-		os.rmdir(self._tmp)
+		if self._tmp:
+			os.rmdir(self._tmp)
 
 	def get_num_files(self):
 		"""
@@ -478,11 +479,11 @@ class Fast5File(object):
 		if not self.fastas:
 			return None
 		elif self.fastas.get('twodirections') is not None:
-			return self.fastas.get('twodirections')
+			return self.fastas.get('twodirections').decode('utf-8')
 		elif self.fastas.get('template') is not None:
-			return self.fastas.get('template')
+			return self.fastas.get('template').decode('utf-8')
 		elif self.fastas.get('complement') is not None:
-			return self.fastas.get('complement')
+			return self.fastas.get('complement').decode('utf-8')
 
 	def get_template_events(self):
 		"""
@@ -528,7 +529,7 @@ class Fast5File(object):
 			self.have_metadata = True
 
 		try:
-			if self.keyinfo['tracking_id'].attrs['exp_start_time'].endswith('Z'):
+			if self.keyinfo['tracking_id'].attrs['exp_start_time'].decode('utf-8').endswith('Z'):
 				# MinKNOW >= 1.4 ISO format and UTC time
 				dt = dateutil.parser.parse(self.keyinfo['tracking_id'].attrs['exp_start_time'])
 				timestamp = int(time.mktime(dt.timetuple()))
@@ -604,7 +605,7 @@ Please report this error (with the offending file) to:
 		if raw_reads is None:
 			return None
 
-		reads = raw_reads.keys()
+		reads = list(raw_reads.keys())
 		if len(reads)==0:
 			self.hdf_internal_error("Raw/Reads group does not contain any items")
 		if len(reads)>1:
@@ -639,6 +640,18 @@ Please report this error (with the offending file) to:
 			return path
 		except Exception:
 			return None
+
+	def get_read_id(self):
+		"""
+		Return the read id for the pore representing the given read.
+		"""
+		node = self.find_read_number_block()
+		if node:
+			try:
+				return node.attrs['read_id'].decode('utf-8')
+			except:
+				return None
+		return None
 
 	def get_read_number(self):
 		"""
@@ -727,7 +740,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['context_tags'].attrs['version_name']
+			return self.keyinfo['context_tags'].attrs['version_name'].decode('utf-8')
 		except:
 			return None
 
@@ -740,7 +753,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['context_tags'].attrs['verssion']
+			return self.keyinfo['context_tags'].attrs['version'].decode('utf-8')
 		except:
 			return None
 
@@ -753,7 +766,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['tracking_id'].attrs['run_id']
+			return self.keyinfo['tracking_id'].attrs['run_id'].decode('utf-8')
 		except:
 			return None
 
@@ -766,7 +779,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['tracking_id'].attrs['heatsink_temp']
+			return float(self.keyinfo['tracking_id'].attrs['heatsink_temp'])
 		except:
 			return None
 
@@ -779,7 +792,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['tracking_id'].attrs['asic_temp']
+			return float(self.keyinfo['tracking_id'].attrs['asic_temp'])
 		except:
 			return None
 
@@ -792,12 +805,12 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['tracking_id'].attrs['flowcell_id']
+			return self.keyinfo['tracking_id'].attrs['flowcell_id'].decode('utf-8')
 		except:
 			pass
 
 		try:
-			return self.keyinfo['tracking_id'].attrs['flow_cell_id']
+			return self.keyinfo['tracking_id'].attrs['flow_cell_id'].decode('utf-8')
 		except:
 			return None
 
@@ -807,7 +820,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['tracking_id'].attrs['hostname']
+			return self.keyinfo['tracking_id'].attrs['hostname'].decode('utf-8')
 		except:
 			return None
 
@@ -820,7 +833,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['tracking_id'].attrs['exp_script_purpose']
+			return self.keyinfo['tracking_id'].attrs['exp_script_purpose'].decode('utf-8')
 		except:
 			return None
 
@@ -833,7 +846,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['tracking_id'].attrs['asic_id']
+			return self.keyinfo['tracking_id'].attrs['asic_id'].decode('utf-8')
 		except:
 			return None
 
@@ -850,7 +863,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['tracking_id'].attrs['hostname']
+			return self.keyinfo['tracking_id'].attrs['hostname'].decode('utf-8')
 		except:
 			return None
 
@@ -868,7 +881,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['tracking_id'].attrs['device_id']
+			return self.keyinfo['tracking_id'].attrs['device_id'].decode('utf-8')
 		except:
 			return None
 
@@ -882,7 +895,7 @@ Please report this error (with the offending file) to:
 			self.have_metadata = True
 
 		try:
-			return self.keyinfo['context_tags'].attrs['user_filename_input']
+			return self.keyinfo['context_tags'].attrs['user_filename_input'].decode('utf-8')
 		except Exception as e:
 			return None
 
@@ -905,7 +918,7 @@ Please report this error (with the offending file) to:
 			self._get_metadata()
 			self.have_metdata = True
 		try:
-			return self.keyinfo['tracking_id'].attrs['exp_script_name']
+			return self.keyinfo['tracking_id'].attrs['exp_script_name'].decode('utf-8')
 		except Exception as e:
 			return None
 
